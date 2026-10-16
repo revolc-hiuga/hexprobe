@@ -9,12 +9,14 @@
 #endif
 
 using Arguments = std::vector<std::string>;
-using Byte = uint8_t;
-using Buffer = std::vector<Byte>;
+using Messages = std::vector<std::string>;
 
 namespace ParseStatus {
 constexpr int OK = 0;
 constexpr int UnexpectedArgument = 1;
+constexpr int UnexpectedBreak = 2;
+constexpr int StartOffsetRepeat = 3;
+constexpr int StartOffsetInvalidNumber = 4;
 }
 
 struct ParseResult {
@@ -29,6 +31,8 @@ void init_codepage();
 void help();
 Arguments collect_arguments(int argc, char** argv);
 ParseResult parse_arguments(Arguments args);
+void print_errmsg(int status_code);
+std::optional<uint32_t> convert_hex(std::string s);
 
 int main(int argc, char** argv) {
     init_codepage();
@@ -38,6 +42,8 @@ int main(int argc, char** argv) {
     if(parse_result.status_code != ParseStatus::OK) {
         if(parse_result.status_code == ParseStatus::UnexpectedArgument) {
             help();
+        } else {
+            print_errmsg(parse_result.status_code);
         }
         return 1;
     }
@@ -66,7 +72,7 @@ void help() {
 
               << "【注意事项】\n"
               << "除了文件名，所有参数都是可选的。\n"
-              << "起始偏移默认为 0, 区间长度默认为 256.\n"
+              << "起始偏移默认为 0, 区间长度默认为 256. 如果起始偏移距离文件末尾的距离小于 256, 取这段距离。\n"
               << "起始偏移和终止偏移（包括指定区间长度模式下的实际终止偏移）不能超过 0x40000000 （即 1GB 大小。）\n"
               << "区间长度不能超过 1024.\n";
 }
@@ -86,5 +92,76 @@ ParseResult parse_arguments(Arguments args) {
         return ParseResult(ParseStatus::OK,
                            Input(args[1], 0, std::nullopt, 256));
     }
-    return ParseResult(ParseStatus::UnexpectedArgument, std::nullopt);
+    
+    uint32_t start_offset = 0;
+    std::optional<uint32_t> end_offset, length;
+
+    bool is_start_offset_set = false;
+    bool is_end_offset_set = false;
+    bool is_length_set = false;
+
+    for(size_t i = 2; i < args.size(); i++) {
+        std::string token = args[i];
+
+        if(token == "--start" || token == "-s") {
+            if(is_start_offset_set) {
+                return ParseResult(ParseStatus::StartOffsetRepeat, std::nullopt);
+            }
+
+            if(i == args.size()-1) {
+                return ParseResult(ParseStatus::UnexpectedBreak, std::nullopt);
+            }
+
+            std::optional<int> start_offset_opt = convert_hex(args[i+1]);
+            if(!start_offset_opt) {
+                return ParseResult(ParseStatus::StartOffsetInvalidNumber, std::nullopt);
+            }
+            
+            start_offset = *start_offset_opt;
+            is_start_offset_set = true;
+            i++;
+        }
+    }
+
+    return ParseResult(ParseStatus::OK, Input(args[1], start_offset, end_offset, length));
+}
+
+void print_errmsg(int status_code) {
+    Messages errmsg = {
+        "",
+        "",
+        "意料外的终止。",
+        "--start / -s 参数重复出现。",
+        "在应该填入起始偏移参数的位置，填入了非数字字符串。"
+    };
+    std::cout << "错误：" << errmsg[status_code] << "\n";
+}
+
+std::optional<uint32_t> convert_hex(std::string s) {
+    if(s.compare(0, 2, "0x") == 0) {
+        s.erase(0, 2);
+    }
+    if(s.empty()) {
+        return std::nullopt;
+    }
+
+    uint32_t value = 0;
+    for(char c : s) {
+        uint32_t digit;
+        if(c >= '0' && c <= '9') {
+            digit = c - '0';
+        } else if(c >= 'a' && c <= 'f') {
+            digit = c - 'a' + 10;
+        } else if(c >= 'A' && c <= 'F') {
+            digit = c - 'A' + 10;
+        } else {
+            return std::nullopt;
+        }
+
+        if(value > (UINT32_MAX - digit) / 16) {
+            return std::nullopt;
+        }
+        value = value * 16 + digit;
+    }
+    return value;
 }

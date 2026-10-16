@@ -1,3 +1,3 @@
 #pragma once
 
-constexpr int BuildNumber = 2;
+constexpr int BuildNumber = 4;
