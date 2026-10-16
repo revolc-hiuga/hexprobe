@@ -1,0 +1,1 @@
+g++ -O2 --std=c++17 -Wall -Wextra ./src/main.cpp ./src/hexprobe.cpp -o hexprobe.exe
