@@ -3,21 +3,13 @@
 #include <vector>
 #include "version.h"
 #include "hexprobe.h"
+#include "error.h"
 
 #ifdef _WIN32
 #include <windows.h>
 #endif
 
 using Arguments = std::vector<std::string>;
-using Messages = std::vector<std::string>;
-
-namespace ParseStatus {
-constexpr int OK = 0;
-constexpr int UnexpectedArgument = 1;
-constexpr int UnexpectedBreak = 2;
-constexpr int StartOffsetRepeat = 3;
-constexpr int StartOffsetInvalidNumber = 4;
-}
 
 struct ParseResult {
     ParseResult(int _status_code, std::optional<Input> _input_opt):
@@ -31,16 +23,16 @@ void init_codepage();
 void help();
 Arguments collect_arguments(int argc, char** argv);
 ParseResult parse_arguments(Arguments args);
-void print_errmsg(int status_code);
 std::optional<uint32_t> convert_hex(std::string s);
+std::optional<uint32_t> convert_dec(std::string s);
 
 int main(int argc, char** argv) {
     init_codepage();
 
     Arguments args = collect_arguments(argc, argv);
     ParseResult parse_result = parse_arguments(args);
-    if(parse_result.status_code != ParseStatus::OK) {
-        if(parse_result.status_code == ParseStatus::UnexpectedArgument) {
+    if(parse_result.status_code != StatusCode::OK) {
+        if(parse_result.status_code == StatusCode::UnexpectedArgument) {
             help();
         } else {
             print_errmsg(parse_result.status_code);
@@ -87,9 +79,9 @@ Arguments collect_arguments(int argc, char** argv) {
 
 ParseResult parse_arguments(Arguments args) {
     if(args.size() == 1) {
-        return ParseResult(ParseStatus::UnexpectedArgument, std::nullopt);
+        return ParseResult(StatusCode::UnexpectedArgument, std::nullopt);
     } else if(args.size() == 2) {
-        return ParseResult(ParseStatus::OK,
+        return ParseResult(StatusCode::OK,
                            Input(args[1], 0, std::nullopt, 256));
     }
     
@@ -105,36 +97,63 @@ ParseResult parse_arguments(Arguments args) {
 
         if(token == "--start" || token == "-s") {
             if(is_start_offset_set) {
-                return ParseResult(ParseStatus::StartOffsetRepeat, std::nullopt);
+                return ParseResult(StatusCode::StartOffsetRepeat, std::nullopt);
             }
 
             if(i == args.size()-1) {
-                return ParseResult(ParseStatus::UnexpectedBreak, std::nullopt);
+                return ParseResult(StatusCode::UnexpectedBreak, std::nullopt);
             }
 
             std::optional<int> start_offset_opt = convert_hex(args[i+1]);
             if(!start_offset_opt) {
-                return ParseResult(ParseStatus::StartOffsetInvalidNumber, std::nullopt);
+                return ParseResult(StatusCode::StartOffsetInvalidNumber, std::nullopt);
             }
             
             start_offset = *start_offset_opt;
             is_start_offset_set = true;
             i++;
+        } else if(token == "--end" || token == "-s") {
+            if(is_end_offset_set) {
+                return ParseResult(StatusCode::EndOffsetRepeat, std::nullopt);
+            }
+
+            if(i == args.size()-1) {
+                return ParseResult(StatusCode::UnexpectedBreak, std::nullopt);
+            }
+
+            end_offset = convert_hex(args[i+1]);
+            if(!end_offset) {
+                return ParseResult(StatusCode::EndOffsetInvalidNumber, std::nullopt);
+            }
+
+            is_end_offset_set = true;
+            i++;
+        } else if(token == "--length" || token == "-l") {
+            if(is_end_offset_set) {
+                return ParseResult(StatusCode::ArgumentConfilt, std::nullopt);
+            }
+
+            if(is_length_set) {
+                return ParseResult(StatusCode::LengthRepeat, std::nullopt);
+            }
+
+            if(i == args.size()-1) {
+                return ParseResult(StatusCode::UnexpectedArgument, std::nullopt);
+            }
+
+            length = convert_dec(args[i+1]);
+            if(!length) {
+                return ParseResult(StatusCode::LengthInvalidNumber, std::nullopt);
+            }
+
+            is_length_set = true;
+            i++;
+        } else {
+            return ParseResult(StatusCode::UnexpectedArgument, std::nullopt);
         }
     }
 
-    return ParseResult(ParseStatus::OK, Input(args[1], start_offset, end_offset, length));
-}
-
-void print_errmsg(int status_code) {
-    Messages errmsg = {
-        "",
-        "",
-        "意料外的终止。",
-        "--start / -s 参数重复出现。",
-        "在应该填入起始偏移参数的位置，填入了非数字字符串。"
-    };
-    std::cout << "错误：" << errmsg[status_code] << "\n";
+    return ParseResult(StatusCode::OK, Input(args[1], start_offset, end_offset, length));
 }
 
 std::optional<uint32_t> convert_hex(std::string s) {
@@ -162,6 +181,26 @@ std::optional<uint32_t> convert_hex(std::string s) {
             return std::nullopt;
         }
         value = value * 16 + digit;
+    }
+    return value;
+}
+
+std::optional<uint32_t> convert_dec(std::string s) {
+    if(s.empty() || (s.size() > 1 && s[0] == '0')) {
+        return std::nullopt;
+    }
+
+    uint32_t value = 0;
+    for(char c : s) {
+        if(c < '0' || c > '9') {
+            return std::nullopt;
+        }
+
+        uint32_t digit = c - '0';
+        if(value > (UINT32_MAX - digit) / 10) {
+            return std::nullopt;
+        }
+        value = value * 10 + digit;
     }
     return value;
 }
