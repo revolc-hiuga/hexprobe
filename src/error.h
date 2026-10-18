@@ -1,4 +1,5 @@
 #pragma once
+
 #include <vector>
 #include <string>
 
@@ -15,6 +16,12 @@ constexpr int EndOffsetInvalidNumber = 6;
 constexpr int ArgumentConfilt = 7;
 constexpr int LengthRepeat = 8;
 constexpr int LengthInvalidNumber = 9;
+constexpr int FileIsNotExist = 10;
+constexpr int FileIsEmpty = 11;
+constexpr int RangeIsNotExist = 12;
+constexpr int OverRange = 13;
+constexpr int RangeIsTooLong = 14;
+constexpr int ReadFileError = 15;
 }
 
 void print_errmsg(int status_code);
