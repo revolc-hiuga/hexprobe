@@ -72,7 +72,7 @@ ConvertResult convert_input(Input input) {
         if(*input.end_offset <= start_offset) {
             return ConvertResult(StatusCode::RangeIsNotExist, std::nullopt);
         }
-        length = *input.end_offset - start_offset;
+        length = *input.end_offset - start_offset + 1;
     } else if(!input.end_offset) {
         length = *input.length;
     }
